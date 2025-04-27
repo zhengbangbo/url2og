@@ -34,7 +34,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Content-Security-Policy', "default-src 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'");
   res.setHeader('Referrer-Policy', 'no-referrer');
   next();
 });
@@ -294,7 +294,7 @@ app.get('/', async (req, res) => {
           ${WHITELIST_ENABLED ? `
           <div class="info">
             <p><strong>⚠️ Note:</strong> This service is restricted to whitelisted domains only.</p>
-            <p>Allowed domains: ${ALLOWED_DOMAINS.join(', ')}</p>
+            <p>Allowed domains: ${ALLOWED_DOMAINS.map(domain => `<a href="https://${domain}" target="_blank">${domain}</a>`).join(', ')}</p>
           </div>
           ` : ''}
           
