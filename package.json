@@ -1,0 +1,19 @@
+{
+  "name": "url2og",
+  "version": "1.0.0",
+  "description": "Can turn any URL into an appropriate screenshot in common OpenGraph dimensions",
+  "license": "AGPL-3.0-or-later",
+  "author": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-cache": "^5.1.2",
+    "puppeteer": "^22.3.0",
+    "yargs": "^17.7.2"
+  }
+}
