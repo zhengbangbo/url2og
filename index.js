@@ -259,6 +259,23 @@ app.get('/', async (req, res) => {
       <html>
         <head>
           <title>URL to OpenGraph Image Service</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="description" content="Generate OpenGraph images from any URL. Perfect for social media previews and link sharing.">
+          <meta name="keywords" content="opengraph, og image, url to image, screenshot service, social media preview">
+          <meta name="author" content="url2og">
+          
+          <!-- Open Graph / Facebook -->
+          <meta property="og:type" content="website">
+          <meta property="og:url" content="https://github.com/Melchizedek6809/url2og">
+          <meta property="og:title" content="URL to OpenGraph Image Service">
+          <meta property="og:description" content="Generate OpenGraph images from any URL. Perfect for social media previews and link sharing.">
+          
+          <!-- Twitter -->
+          <meta name="twitter:card" content="summary_large_image">
+          <meta name="twitter:title" content="URL to OpenGraph Image Service">
+          <meta name="twitter:description" content="Generate OpenGraph images from any URL. Perfect for social media previews and link sharing.">
+          
           <style>
             body {
               font-family: Arial, sans-serif;
@@ -324,6 +341,10 @@ app.get('/', async (req, res) => {
             </p>
             <button type="submit">Generate Image</button>
           </form>
+          
+          <footer style="margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; text-align: center; font-size: 14px;">
+            <p>🌟 <a href="https://github.com/Melchizedek6809/url2og" target="_blank">View source code on GitHub</a> 🌟</p>
+          </footer>
         </body>
       </html>
     `);
