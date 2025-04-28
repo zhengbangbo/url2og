@@ -366,6 +366,9 @@ app.get('/', async (req, res) => {
     targetUrl = `https://${url}`;
   }
   
+  // Add URL2OG=1 parameter to the URL
+  targetUrl += targetUrl.includes('?') ? '&URL2OG=1' : '?URL2OG=1';
+  
   // Additional URL validation - reject URLs with control characters or very long URLs
   if (/[\u0000-\u001F\u007F-\u009F]/.test(targetUrl) || targetUrl.length > 2000) {
     return res.status(400).send('Invalid URL');
