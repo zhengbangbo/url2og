@@ -41,7 +41,8 @@ app.use((req, res, next) => {
 
 // Rate limiting middleware
 app.use((req, res, next) => {
-  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+  // Check if we're at max concurrent requests
+  if (browserQueue.length >= MAX_CONCURRENT_REQUESTS) {
     return res.status(429).send('Too many requests. Please try again later.');
   }
   next();
@@ -517,9 +518,6 @@ app.get('/', async (req, res) => {
   }
   
   try {
-    // Increment active requests counter
-    activeRequests++;
-    
     // Check cache first
     const cachedImage = getFromCache(targetUrl, parsedWidth, parsedHeight);
     
@@ -531,18 +529,12 @@ app.get('/', async (req, res) => {
       res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
       res.setHeader('X-Cache', 'HIT');
       
-      // Decrement active requests counter
-      activeRequests--;
-      
       return res.send(cachedImage);
     }
     
     console.log(`🔍 Cache miss! Capturing screenshot of ${targetUrl} at ${parsedWidth}x${parsedHeight} pixels...`);
     await processRequest(targetUrl, parsedWidth, parsedHeight, res);
   } catch (error) {
-    // Decrement active requests counter in case of error
-    activeRequests--;
-    
     console.error(`❌ Error capturing screenshot: ${error.message}`);
     res.status(500).send('Error capturing screenshot');
   }
