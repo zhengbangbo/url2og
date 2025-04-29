@@ -211,26 +211,130 @@ function cleanupCache(force = false) {
 }
 
 // Browser instance that will be reused
-let browser;
+let browser = null;
+let browserQueue = [];
+let isBrowserInitializing = false;
 
-// Initialize browser when server starts
+// Initialize browser when needed
 async function initBrowser() {
-  browser = await puppeteer.launch({
-    headless: "new",
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-extensions',
-      '--disable-audio-output'
-    ]
-  });
-  console.log('🌸 Browser initialized!');
+  if (browser) return browser;
+  if (isBrowserInitializing) {
+    // Wait for browser to initialize
+    while (isBrowserInitializing) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return browser;
+  }
+
+  isBrowserInitializing = true;
+  try {
+    browser = await puppeteer.launch({
+      headless: "new",
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-extensions',
+        '--disable-audio-output'
+      ]
+    });
+    console.log('🌸 Browser initialized!');
+    return browser;
+  } finally {
+    isBrowserInitializing = false;
+  }
+}
+
+// Close browser when queue is empty
+async function closeBrowserIfQueueEmpty() {
+  if (browserQueue.length === 0 && browser) {
+    await browser.close();
+    browser = null;
+    console.log('✨ Browser closed, queue is empty!');
+  }
+}
+
+// Add request to queue and process
+async function processRequest(targetUrl, parsedWidth, parsedHeight, res) {
+  browserQueue.push({ targetUrl, parsedWidth, parsedHeight, res });
+  
+  if (browserQueue.length === 1) {
+    // Start processing if this is the only request
+    processNextRequest();
+  }
+}
+
+// Process next request in queue
+async function processNextRequest() {
+  if (browserQueue.length === 0) {
+    await closeBrowserIfQueueEmpty();
+    return;
+  }
+
+  const { targetUrl, parsedWidth, parsedHeight, res } = browserQueue[0];
+  
+  try {
+    const browser = await initBrowser();
+    const page = await browser.newPage();
+    
+    try {
+      // Set a navigation timeout
+      page.setDefaultNavigationTimeout(30000);
+      
+      // Block unnecessary resources to improve performance and security
+      await page.setRequestInterception(true);
+      page.on('request', (req) => {
+        const resourceType = req.resourceType();
+        if (['media', 'font', 'websocket'].includes(resourceType)) {
+          req.abort();
+        } else {
+          req.continue();
+        }
+      });
+      
+      await page.setViewport({
+        width: parsedWidth,
+        height: parsedHeight,
+        deviceScaleFactor: 1,
+      });
+      
+      await page.goto(targetUrl, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      });
+      
+      const screenshot = await page.screenshot({
+        type: 'jpeg',
+        quality: 90,
+      });
+      
+      // Save to cache
+      saveToCache(targetUrl, parsedWidth, parsedHeight, screenshot);
+      
+      // Set response headers and send image
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('X-Cache', 'MISS');
+      res.send(screenshot);
+      
+      console.log(`✅ Screenshot of ${targetUrl} sent successfully!`);
+    } finally {
+      await page.close();
+    }
+  } catch (error) {
+    console.error(`❌ Error capturing screenshot: ${error.message}`);
+    res.status(500).send('Error capturing screenshot');
+  } finally {
+    // Remove processed request from queue
+    browserQueue.shift();
+    // Process next request if any
+    processNextRequest();
+  }
 }
 
 // Close browser and database on server shutdown
@@ -238,7 +342,6 @@ process.on('SIGINT', async () => {
   if (browser) {
     await browser.close();
   }
-  
   console.log('✨ Browser closed, goodbye!');
   process.exit();
 });
@@ -435,56 +538,7 @@ app.get('/', async (req, res) => {
     }
     
     console.log(`🔍 Cache miss! Capturing screenshot of ${targetUrl} at ${parsedWidth}x${parsedHeight} pixels...`);
-    
-    // Capture screenshot
-    const page = await browser.newPage();
-    try {
-      // Set a navigation timeout
-      page.setDefaultNavigationTimeout(30000);
-      
-      // Block unnecessary resources to improve performance and security
-      await page.setRequestInterception(true);
-      page.on('request', (req) => {
-        // Block media, font, and websocket requests to reduce attack surface
-        const resourceType = req.resourceType();
-        if (['media', 'font', 'websocket'].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
-      
-      await page.setViewport({
-        width: parsedWidth,
-        height: parsedHeight,
-        deviceScaleFactor: 1,
-      });
-      
-      await page.goto(targetUrl, {
-        waitUntil: 'networkidle2',
-        timeout: 30000,
-      });
-      
-      const screenshot = await page.screenshot({
-        type: 'jpeg',
-        quality: 90,
-      });
-      
-      // Save to cache
-      saveToCache(targetUrl, parsedWidth, parsedHeight, screenshot);
-      
-      // Set response headers and send image
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-      res.setHeader('X-Cache', 'MISS');
-      res.send(screenshot);
-      
-      console.log(`✅ Screenshot of ${targetUrl} sent successfully!`);
-    } finally {
-      await page.close();
-      // Decrement active requests counter
-      activeRequests--;
-    }
+    await processRequest(targetUrl, parsedWidth, parsedHeight, res);
   } catch (error) {
     // Decrement active requests counter in case of error
     activeRequests--;
@@ -501,9 +555,6 @@ app.get('/health', (req, res) => {
 
 // Start the server
 app.listen(PORT, async () => {
-  // Initialize browser
-  await initBrowser();
-  
   // Set up automatic cache cleanup every 24 hours
   setInterval(() => {
     console.log('🧹 Running scheduled cache cleanup...');
