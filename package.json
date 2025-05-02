@@ -11,9 +11,9 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "node-cache": "^5.1.2",
-    "puppeteer": "^22.3.0",
-    "yargs": "^17.7.2"
+    "express": "latest",
+    "node-cache": "latest",
+    "puppeteer": "latest",
+    "yargs": "latest"
   }
 }
