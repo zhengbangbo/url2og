@@ -31,7 +31,10 @@ RUN npm ci --omit=dev
 COPY . .
 
 # Create cache directory with proper permissions
-RUN mkdir -p cache && chown -R appuser:appgroup /app
+RUN mkdir -p /app/cache && chown -R appuser:appgroup /app
+
+# Create volume for cache directory
+VOLUME ["/app/cache"]
 
 # Expose port
 EXPOSE 4040
