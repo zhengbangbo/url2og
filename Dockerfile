@@ -10,7 +10,10 @@ RUN apk add --no-cache \
     ca-certificates \
     ttf-freefont \
     nodejs \
-    yarn
+    yarn \
+    font-noto \
+    font-noto-cjk \
+    font-noto-emoji
 
 # Tell Puppeteer to use installed Chromium instead of downloading its own
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
