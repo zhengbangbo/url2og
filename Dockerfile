@@ -3,6 +3,7 @@ FROM node:lts-alpine
 # Install dependencies for Puppeteer
 RUN apk add --no-cache \
     chromium \
+    curl \
     nss \
     freetype \
     harfbuzz \
@@ -50,9 +51,11 @@ ENV MAX_CONCURRENT_REQUESTS=10
 # Switch to non-root user
 USER appuser
 
-# Add health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:4040/health || exit 1
+# Configure Docker to send SIGTERM and wait only 10 seconds before SIGKILL
+STOPSIGNAL SIGTERM
+
+# Reduce healthcheck timeout for faster shutdown detection
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD curl -f http://localhost:4040/health || exit 1 
 
 # Start the application
 CMD ["node", "index.js"] 

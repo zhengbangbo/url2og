@@ -41,6 +41,11 @@ app.use((req, res, next) => {
 
 // Rate limiting middleware
 app.use((req, res, next) => {
+  // Check if server is shutting down
+  if (isShuttingDown) {
+    return res.status(503).send('Server is shutting down');
+  }
+  
   // Check if we're at max concurrent requests
   if (browserQueue.length >= MAX_CONCURRENT_REQUESTS) {
     return res.status(429).send('Too many requests. Please try again later.');
@@ -272,12 +277,19 @@ async function processRequest(targetUrl, parsedWidth, parsedHeight, res) {
 
 // Process next request in queue
 async function processNextRequest() {
-  if (browserQueue.length === 0) {
+  if (browserQueue.length === 0 || isShuttingDown) {
     await closeBrowserIfQueueEmpty();
     return;
   }
 
   const { targetUrl, parsedWidth, parsedHeight, res } = browserQueue[0];
+  
+  // Check if we're shutting down before processing
+  if (isShuttingDown) {
+    res.status(503).send('Server is shutting down');
+    browserQueue.shift();
+    return;
+  }
   
   try {
     const browser = await initBrowser();
@@ -290,6 +302,12 @@ async function processNextRequest() {
       // Block unnecessary resources to improve performance and security
       await page.setRequestInterception(true);
       page.on('request', (req) => {
+        // Abort all requests if shutting down
+        if (isShuttingDown) {
+          req.abort();
+          return;
+        }
+        
         const resourceType = req.resourceType();
         if (['media', 'font', 'websocket'].includes(resourceType)) {
           req.abort();
@@ -304,10 +322,22 @@ async function processNextRequest() {
         deviceScaleFactor: 1,
       });
       
+      // Check shutdown state before navigation
+      if (isShuttingDown) {
+        res.status(503).send('Server is shutting down');
+        return;
+      }
+      
       await page.goto(targetUrl, {
         waitUntil: 'networkidle2',
         timeout: 30000,
       });
+      
+      // Check shutdown state before screenshot
+      if (isShuttingDown) {
+        res.status(503).send('Server is shutting down');
+        return;
+      }
       
       const screenshot = await page.screenshot({
         type: 'jpeg',
@@ -328,23 +358,69 @@ async function processNextRequest() {
       await page.close();
     }
   } catch (error) {
-    console.error(`❌ Error capturing screenshot: ${error.message}`);
-    res.status(500).send('Error capturing screenshot');
+    if (!isShuttingDown) {
+      console.error(`❌ Error capturing screenshot: ${error.message}`);
+      res.status(500).send('Error capturing screenshot');
+    }
   } finally {
     // Remove processed request from queue
     browserQueue.shift();
-    // Process next request if any
-    processNextRequest();
+    // Process next request if any (and not shutting down)
+    if (!isShuttingDown) {
+      processNextRequest();
+    }
   }
 }
 
 // Close browser and database on server shutdown
-process.on('SIGINT', async () => {
-  if (browser) {
-    await browser.close();
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log(`💕 Received ${signal}, starting graceful shutdown...`);
+  
+  // Set a timeout for forced shutdown
+  const forceShutdownTimeout = setTimeout(() => {
+    console.log('⚠️ Force shutdown after timeout');
+    process.exit(1);
+  }, 10000); // 10 seconds timeout
+  
+  try {
+    // Clear the browser queue to prevent new requests
+    browserQueue.length = 0;
+    
+    // Close browser if it exists
+    if (browser) {
+      console.log('🌸 Closing browser...');
+      await browser.close();
+      browser = null;
+    }
+    
+    console.log('✨ Graceful shutdown completed!');
+    clearTimeout(forceShutdownTimeout);
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    clearTimeout(forceShutdownTimeout);
+    process.exit(1);
   }
-  console.log('✨ Browser closed, goodbye!');
-  process.exit();
+}
+
+// Handle both SIGINT (Ctrl+C) and SIGTERM (Docker stop)
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('unhandledRejection');
 });
 
 // Middleware to handle server errors
